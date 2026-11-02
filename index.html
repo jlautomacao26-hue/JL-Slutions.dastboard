@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JL Solutions - Gestão Premium</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel para JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            bg: '#0B132B',
+                            surface: '#1E293B',
+                            primary: '#2563EB',
+                            accent: '#06B6D4',
+                        }
+                    },
+                    boxShadow: {
+                        'glass': '0 8px 32px 0 rgba(6, 182, 212, 0.15)',
+                        'neon': '0 0 15px rgba(6, 182, 212, 0.5)',
+                        '3d': '0 10px 20px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1)'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0B132B;
+            color: #F8FAFC;
+            font-family: 'Inter', system-ui, sans-serif;
+            overflow-x: hidden;
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .glass-input:focus {
+            outline: none;
+            border-color: #06B6D4;
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+        }
+
+        /* Scrollbar customizada */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B132B;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1E293B;
+            border-radius: 4px;
+            border: 1px solid #06B6D4;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2563EB;
+        }
+
+        .kanban-col { min-height: 400px; }
+        
+        @keyframes pulse-neon {
+            0%, 100% { box-shadow: 0 0 10px rgba(6,182,212,0.4); }
+            50% { box-shadow: 0 0 20px rgba(6,182,212,0.8); }
+        }
+        .neon-pulse { animation: pulse-neon 2s infinite; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Helpers & Utils ---
+        const formatMoney = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = error => reject(error);
+        });
+
+        // --- Mapeamento de Módulos Padrões ---
+        const DEFAULT_CATEGORIES = [
+            { id: 'dashboard', name: 'Dashboard', icon: 'fa-chart-pie', type: 'system' },
+            { id: 'kanban', name: 'Funil KANBAN', icon: 'fa-layer-group', type: 'system' },
+            { id: 'clientes_nfc', name: 'Clientes NFC', icon: 'fa-address-card', type: 'crud', config: 'nfc' },
+            { id: 'clientes_sites', name: 'Clientes Sites', icon: 'fa-globe', type: 'crud', config: 'sites' },
+            { id: 'prospeccao', name: 'Prospecção (Mapa)', icon: 'fa-map-location-dot', type: 'system' },
+            { id: 'reunioes', name: 'Reuniões Ao Vivo', icon: 'fa-video', type: 'crud', config: 'reunioes' },
+            { id: 'prompts_sites', name: 'Prompts Sites', icon: 'fa-terminal', type: 'crud', config: 'prompts' },
+            { id: 'prompts_wpp', name: 'Prompts WhatsApp', icon: 'fa-brands fa-whatsapp', type: 'crud', config: 'prompts' },
+            { id: 'produtos', name: 'Produtos & Fornecedores', icon: 'fa-box-open', type: 'crud', config: 'produtos' },
+            { id: 'calculadora', name: 'Calculadora de Margem', icon: 'fa-calculator', type: 'system' },
+            { id: 'ideias', name: 'Ideias & Planejamentos', icon: 'fa-lightbulb', type: 'crud', config: 'ideias' },
+            { id: 'equipe', name: 'Hierarquia & Equipe', icon: 'fa-sitemap', type: 'crud', config: 'equipe' },
+            { id: 'despesas', name: 'Despesas & Custos', icon: 'fa-money-bill-trend-up', type: 'crud', config: 'despesas' },
+            { id: 'prospeccoes_feitas', name: 'Prospecções Feitas', icon: 'fa-handshake', type: 'crud', config: 'prospeccoes_feitas' },
+        ];
+
+        // Esquemas de CRUD pré-definidos
+        const CRUD_SCHEMAS = {
+            nfc: [
+                { name: 'nome', label: 'Nome do Estabelecimento', type: 'text' },
+                { name: 'categoria', label: 'Categoria', type: 'text' },
+                { name: 'endereco', label: 'Endereço e CEP', type: 'text' },
+                { name: 'qtd', label: 'Quantidade Vendida', type: 'number' },
+                { name: 'valor', label: 'Valor Total (R$)', type: 'number' },
+                { name: 'telComercial', label: 'Telefone Comercial', type: 'text' },
+                { name: 'telPessoal', label: 'Telefone Pessoal', type: 'text' },
+                { name: 'responsavel', label: 'Nome do Responsável', type: 'text' },
+                { name: 'dataVenda', label: 'Data da Venda', type: 'date' },
+                { name: 'linkMaps', label: 'Link Google Maps', type: 'text' },
+                { name: 'midia', label: 'Foto/Vídeo (Fachada)', type: 'file' }
+            ],
+            sites: [
+                { name: 'modalidade', label: 'Modalidade', type: 'select', options: ['Presencial', 'Virtual'] },
+                { name: 'nome', label: 'Nome do Cliente', type: 'text' },
+                { name: 'categoria', label: 'Categoria', type: 'text' },
+                { name: 'cidade', label: 'Cidade/UF', type: 'text' },
+                { name: 'telComercial', label: 'Telefone Comercial', type: 'text' },
+                { name: 'telPessoal', label: 'Telefone Pessoal', type: 'text' },
+                { name: 'responsavel', label: 'Nome do Responsável', type: 'text' },
+                { name: 'valor', label: 'Valor do Contrato (R$)', type: 'number' },
+                { name: 'dataVenda', label: 'Data da Venda', type: 'date' },
+                { name: 'midia', label: 'Layout/Mídia', type: 'file' }
+            ],
+            reunioes: [
+                { name: 'titulo', label: 'Pauta/Título', type: 'text' },
+                { name: 'dataHora', label: 'Data e Horário', type: 'datetime-local' },
+                { name: 'link', label: 'Link do Meet', type: 'text' },
+                { name: 'responsaveis', label: 'Responsáveis', type: 'text' },
+                { name: 'obs', label: 'Observações', type: 'textarea' },
+                { name: 'status', label: 'Status da Reunião', type: 'select', options: ['Ativa: SIM', 'Pausada: NÃO'] }
+            ],
+            despesas: [
+                { name: 'titulo', label: 'Título da Despesa/Investimento', type: 'text' },
+                { name: 'valor', label: 'Valor (R$)', type: 'number' },
+                { name: 'data', label: 'Data', type: 'date' },
+                { name: 'descricao', label: 'Descrição/Observação', type: 'textarea' },
+                { name: 'midia', label: 'Comprovante/Print', type: 'file' }
+            ],
+            prospeccoes_feitas: [
+                { name: 'local', label: 'Nome do Local/Empresa', type: 'text' },
+                { name: 'cidade', label: 'Cidade', type: 'text' },
+                { name: 'telefone', label: 'Número de Telefone', type: 'text' },
+                { name: 'linkMaps', label: 'Link Google Maps', type: 'text' },
+                { name: 'status', label: 'Status', type: 'select', options: ['Contato Frio', 'Em Negociação', 'Reunião Agendada', 'Recusado'] },
+                { name: 'midia', label: 'Print/Imagem', type: 'file' }
+            ],
+            prompts: [
+                { name: 'titulo', label: 'Título do Prompt', type: 'text' },
+                { name: 'conteudo', label: 'Conteúdo do Prompt', type: 'textarea' }
+            ],
+            produtos: [
+                { name: 'nome', label: 'Nome do Produto/Fornecedor', type: 'text' },
+                { name: 'link', label: 'Link de Compra', type: 'text' },
+                { name: 'preco', label: 'Preço Estimado', type: 'number' },
+                { name: 'categoria', label: 'Categoria', type: 'text' }
+            ],
+            ideias: [
+                { name: 'titulo', label: 'Título', type: 'text' },
+                { name: 'categoria', label: 'Categoria', type: 'text' },
+                { name: 'descricao', label: 'Descrição Detalhada', type: 'textarea' },
+                { name: 'midia', label: 'Anexo', type: 'file' },
+                { name: 'link', label: 'Link de Referência', type: 'text' }
+            ],
+            equipe: [
+                { name: 'nome', label: 'Nome Completo', type: 'text' },
+                { name: 'cargo', label: 'Cargo/Hierarquia', type: 'select', options: ['Fundador', 'Sócio', 'Gerente', 'Colaborador'] },
+                { name: 'telefone', label: 'Telefone', type: 'text' },
+                { name: 'email', label: 'E-mail', type: 'text' },
+                { name: 'midia', label: 'Foto (Avatar)', type: 'file' }
+            ]
+        };
+
+        // --- Hook de LocalStorage ---
+        function useLocalStorage(key, initialValue) {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.error(error);
+                    return initialValue;
+                }
+            });
+
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.error(error);
+                }
+            };
+            return [storedValue, setValue];
+        }
+
+        // --- Componentes ---
+
+        const FloatingControls = () => (
+            <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-50">
+                <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="w-12 h-12 rounded-full glass-panel flex items-center justify-center text-brand-accent hover:bg-brand-primary transition-all shadow-glass group">
+                    <i className="fas fa-chevron-up group-hover:text-white"></i>
+                </button>
+                <button onClick={() => window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'})} className="w-12 h-12 rounded-full glass-panel flex items-center justify-center text-brand-accent hover:bg-brand-primary transition-all shadow-glass group">
+                    <i className="fas fa-chevron-down group-hover:text-white"></i>
+                </button>
+            </div>
+        );
+
+        // -- Módulo: Dashboard --
+        const Dashboard = ({ data, updateData }) => {
+            const clientesNFC = data.clientes_nfc || [];
+            const clientesSites = data.clientes_sites || [];
+            const despesas = data.despesas || [];
+            const reunioes = data.reunioes || [];
+
+            const totalNfcVal = clientesNFC.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+            const totalSitesVal = clientesSites.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+            const faturamentoBruto = totalNfcVal + totalSitesVal;
+            
+            const totalDespesas = despesas.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
+            const caixaLiquido = faturamentoBruto - totalDespesas;
+
+            const totalClientes = clientesNFC.length + clientesSites.length;
+
+            const reuniaoAtiva = reunioes.find(r => r.status === 'Ativa: SIM');
+
+            const [editQuote, setEditQuote] = useState(false);
+            const [quote, setQuote] = useState(data.settings?.quote || "O sucesso é a soma de pequenos esforços repetidos dia após dia.");
+
+            const saveQuote = () => {
+                updateData('settings', { ...data.settings, quote });
+                setEditQuote(false);
+            };
+
+            return (
+                <div className="space-y-8 animate-fade-in pb-10">
+                    {/* Header Dashboard */}
+                    <div className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary rounded-full filter blur-[100px] opacity-20 -mr-20 -mt-20"></div>
+                        
+                        <div className="flex-1 relative z-10 w-full text-center md:text-left">
+                            <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Visão Geral <span className="text-brand-accent">JL</span></h2>
+                            
+                            {editQuote ? (
+                                <div className="flex items-center gap-2 mt-2 justify-center md:justify-start">
+                                    <input type="text" value={quote} onChange={e => setQuote(e.target.value)} className="glass-input px-3 py-1 rounded-lg w-full max-w-md text-sm" />
+                                    <button onClick={saveQuote} className="bg-brand-primary px-3 py-1 rounded-lg text-sm"><i className="fas fa-check"></i></button>
+                                </div>
+                            ) : (
+                                <p className="text-slate-300 italic text-sm md:text-base flex items-center justify-center md:justify-start gap-2 group">
+                                    "{quote}" 
+                                    <button onClick={() => setEditQuote(true)} className="text-brand-accent opacity-0 group-hover:opacity-100 transition-opacity"><i className="fas fa-pen text-xs"></i></button>
+                                </p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Reunião Ao Vivo (Destaque) */}
+                    {reuniaoAtiva && (
+                        <div className="bg-gradient-to-r from-brand-primary/20 to-brand-accent/20 border border-brand-accent/50 rounded-2xl p-6 shadow-neon neon-pulse relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-brand-accent"></div>
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 text-2xl animate-pulse">
+                                        <i className="fas fa-video"></i>
+                                    </div>
+                                    <div>
+                                        <div className="inline-flex items-center gap-2 bg-red-500/20 text-red-400 text-xs font-bold px-2 py-1 rounded-full mb-2 uppercase tracking-wider">
+                                            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span> Ao Vivo Agora
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-white">{reuniaoAtiva.titulo}</h3>
+                                        <p className="text-slate-400 text-sm mt-1"><i className="far fa-clock mr-1"></i> {new Date(reuniaoAtiva.dataHora).toLocaleString('pt-BR')} • {reuniaoAtiva.responsaveis}</p>
+                                    </div>
+                                </div>
+                                <a href={reuniaoAtiva.link} target="_blank" className="w-full md:w-auto bg-brand-primary hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-xl shadow-glass transition-all hover:scale-105 text-center flex items-center justify-center gap-2">
+                                    ENTRAR NA REUNIÃO AGORA <i className="fas fa-external-link-alt"></i>
+                                </a>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Cards de Métricas */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <MetricCard title="Faturamento Bruto" value={formatMoney(faturamentoBruto)} icon="fa-chart-line" color="text-emerald-400" />
+                        <MetricCard title="Despesas Totais" value={formatMoney(totalDespesas)} icon="fa-arrow-trend-down" color="text-red-400" />
+                        <MetricCard title="Caixa Líquido" value={formatMoney(caixaLiquido)} icon="fa-wallet" color="text-brand-accent" highlight={true} />
+                        <MetricCard title="Total Clientes" value={totalClientes} icon="fa-users" color="text-purple-400" />
+                        
+                        <MetricCard title="NFCs Vendidas" value={clientesNFC.length} sub={`${formatMoney(totalNfcVal)}`} icon="fa-address-card" color="text-blue-400" />
+                        <MetricCard title="Sites Vendidos" value={clientesSites.length} sub={`${formatMoney(totalSitesVal)}`} icon="fa-globe" color="text-indigo-400" />
+                    </div>
+                </div>
+            );
+        };
+
+        const MetricCard = ({ title, value, sub, icon, color, highlight }) => (
+            <div className={`glass-panel p-6 rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:-translate-y-2 transition-transform duration-300 shadow-3d ${highlight ? 'border-brand-accent/50 bg-brand-primary/10' : ''}`}>
+                <div className="flex justify-between items-start mb-4">
+                    <h4 className="text-slate-400 text-sm font-medium uppercase tracking-wider">{title}</h4>
+                    <i className={`fas ${icon} ${color} text-2xl opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all`}></i>
+                </div>
+                <div>
+                    <h2 className={`text-3xl font-bold ${highlight ? 'text-white text-shadow-neon' : 'text-white'}`}>{value}</h2>
+                    {sub && <p className="text-slate-500 text-sm mt-1">{sub}</p>}
+                </div>
+                <div className={`absolute -bottom-10 -right-10 text-9xl ${color} opacity-5 group-hover:opacity-10 transition-opacity`}>
+                    <i className={`fas ${icon}`}></i>
+                </div>
+            </div>
+        );
+
+        // -- Gerenciador CRUD Genérico --
+        const GenericManager = ({ category, data, onUpdate }) => {
+            const [items, setItems] = useState(data[category.id] || []);
+            const [form, setForm] = useState(null);
+            const [itemToDelete, setItemToDelete] = useState(null);
+            const [toast, setToast] = useState(null);
+            const isCustom = category.type === 'custom';
+            const schema = isCustom ? category.schema : CRUD_SCHEMAS[category.config];
+
+            useEffect(() => {
+                setItems(data[category.id] || []);
+            }, [category.id, data]);
+
+            const saveItems = (newItems) => {
+                setItems(newItems);
+                onUpdate(category.id, newItems);
+            };
+
+            const handleSave = (e) => {
+                e.preventDefault();
+                if (form.id) {
+                    saveItems(items.map(i => i.id === form.id ? form : i));
+                } else {
+                    saveItems([{ ...form, id: generateId(), createdAt: new Date().toISOString() }, ...items]);
+                }
+                setForm(null);
+            };
+
+            const handleDelete = (id) => {
+                setItemToDelete(id);
+            };
+
+            const confirmDelete = () => {
+                if (itemToDelete) {
+                    saveItems(items.filter(i => i.id !== itemToDelete));
+                    setItemToDelete(null);
+                }
+            };
+
+            const handleFile = async (e, fieldName) => {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 2 * 1024 * 1024) {
+                        setToast("Atenção: Imagem maior que 2MB. Pode exceder memória.");
+                        setTimeout(() => setToast(null), 3000);
+                    }
+                    const base64 = await fileToBase64(file);
+                    setForm({ ...form, [fieldName]: base64 });
+                }
+            };
+
+            const copyToClipboard = (text) => {
+                navigator.clipboard.writeText(text).then(() => {
+                    setToast("Copiado com sucesso!");
+                    setTimeout(() => setToast(null), 3000);
+                });
+            };
+
+            if (isCustom && (!schema || schema.length === 0)) {
+                return <SchemaBuilder category={category} onUpdateCategory={(updated) => onUpdate('categories_update', updated)} />;
+            }
+
+            return (
+                <div className="space-y-6 animate-fade-in pb-20">
+                    {toast && (
+                        <div className="fixed top-24 right-6 bg-brand-primary text-white px-4 py-2 rounded-lg shadow-glass z-50 animate-bounce">
+                            <i className="fas fa-info-circle mr-2"></i>{toast}
+                        </div>
+                    )}
+                    
+                    {itemToDelete && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="glass-panel p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border border-slate-600">
+                                <i className="fas fa-exclamation-triangle text-4xl text-yellow-500 mb-4"></i>
+                                <h3 className="text-xl font-bold text-white mb-2">Excluir Registro?</h3>
+                                <p className="text-slate-300 text-sm mb-6">Esta ação não pode ser desfeita.</p>
+                                <div className="flex gap-4 justify-center">
+                                    <button onClick={() => setItemToDelete(null)} className="px-4 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-600 transition-colors w-full">Cancelar</button>
+                                    <button onClick={confirmDelete} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors w-full">Excluir</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h2 className="text-2xl font-bold text-white"><i className={`fas ${category.icon} text-brand-accent mr-2`}></i> {category.name}</h2>
+                            <p className="text-slate-400 text-sm mt-1">Gerenciamento de registros</p>
+                        </div>
+                        {!form && (
+                            <button onClick={() => setForm({})} className="bg-brand-primary hover:bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-glass transition-all">
+                                <i className="fas fa-plus"></i> Novo Registro
+                            </button>
+                        )}
+                    </div>
+
+                    {form ? (
+                        <div className="glass-panel p-6 rounded-2xl relative shadow-3d">
+                            <button onClick={() => setForm(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><i className="fas fa-times text-xl"></i></button>
+                            <h3 className="text-xl font-bold text-white mb-6 border-b border-slate-700 pb-2">
+                                {form.id ? 'Editar Registro' : 'Novo Registro'}
+                            </h3>
+                            <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {schema.map((field, idx) => (
+                                    <div key={idx} className={`${field.type === 'textarea' || field.type === 'file' ? 'md:col-span-2' : ''}`}>
+                                        <label className="block text-sm font-medium text-slate-300 mb-1">{field.label}</label>
+                                        
+                                        {field.type === 'textarea' ? (
+                                            <textarea required rows="4" className="w-full glass-input p-3 rounded-xl" value={form[field.name] || ''} onChange={e => setForm({...form, [field.name]: e.target.value})}></textarea>
+                                        ) : field.type === 'select' ? (
+                                            <select required className="w-full glass-input p-3 rounded-xl" value={form[field.name] || ''} onChange={e => setForm({...form, [field.name]: e.target.value})}>
+                                                <option value="">Selecione...</option>
+                                                {field.options.map(opt => <option key={opt} value={opt} className="bg-brand-bg">{opt}</option>)}
+                                            </select>
+                                        ) : field.type === 'file' ? (
+                                            <div className="w-full border-2 border-dashed border-slate-600 rounded-xl p-4 text-center hover:border-brand-accent transition-colors">
+                                                <input type="file" accept="image/*,video/*" onChange={(e) => handleFile(e, field.name)} className="w-full text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-primary file:text-white hover:file:bg-blue-600"/>
+                                                {form[field.name] && <img src={form[field.name]} alt="Preview" className="mt-4 h-32 object-cover rounded-lg mx-auto border border-slate-700 shadow-md" />}
+                                            </div>
+                                        ) : (
+                                            <input required type={field.type} step={field.type === 'number' ? '0.01' : undefined} className="w-full glass-input p-3 rounded-xl" value={form[field.name] || ''} onChange={e => setForm({...form, [field.name]: e.target.value})} />
+                                        )}
+                                    </div>
+                                ))}
+                                <div className="md:col-span-2 flex justify-end mt-4">
+                                    <button type="submit" className="bg-brand-accent hover:bg-cyan-600 text-white font-bold py-3 px-8 rounded-xl shadow-glass transition-all hover:scale-105">
+                                        Salvar Registro
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {items.length === 0 && <div className="col-span-full text-center text-slate-500 py-10 glass-panel rounded-2xl">Nenhum registro encontrado.</div>}
+                            {items.map(item => (
+                                <div key={item.id} className="glass-panel rounded-2xl p-5 relative group hover:border-brand-primary/50 transition-all flex flex-col justify-between">
+                                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => setForm(item)} className="w-8 h-8 rounded-full bg-slate-700 hover:bg-brand-primary flex items-center justify-center text-white text-xs"><i className="fas fa-pen"></i></button>
+                                        <button onClick={() => handleDelete(item.id)} className="w-8 h-8 rounded-full bg-slate-700 hover:bg-red-500 flex items-center justify-center text-white text-xs"><i className="fas fa-trash"></i></button>
+                                    </div>
+                                    
+                                    <div className="space-y-3 mb-4 mt-2">
+                                        {schema.slice(0, 5).map(field => {
+                                            if(!item[field.name] || field.type === 'file') return null;
+                                            return (
+                                                <div key={field.name}>
+                                                    <span className="text-xs text-slate-400 block uppercase tracking-wider">{field.label}</span>
+                                                    {field.name === 'link' || field.name === 'linkMaps' ? (
+                                                        <a href={item[field.name]} target="_blank" className="text-brand-accent hover:underline text-sm break-words"><i className="fas fa-external-link-alt mr-1"></i> Abrir Link</a>
+                                                    ) : field.type === 'number' && (field.name.toLowerCase().includes('valor') || field.name.toLowerCase().includes('preco')) ? (
+                                                        <span className="text-white font-medium">{formatMoney(item[field.name])}</span>
+                                                    ) : field.type === 'textarea' ? (
+                                                        <div className="flex gap-2 items-start">
+                                                            <p className="text-white text-sm line-clamp-3 flex-1">{item[field.name]}</p>
+                                                            <button onClick={() => copyToClipboard(item[field.name])} className="text-slate-400 hover:text-brand-accent"><i className="far fa-copy"></i></button>
+                                                        </div>
+                                                    ) : (
+                                                        <span className={`text-white font-medium ${item[field.name].includes('SIM') ? 'text-green-400' : ''}`}>{item[field.name]}</span>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {/* Exibir mídia se houver no schema e no item */}
+                                    {schema.find(f => f.type === 'file') && item[schema.find(f => f.type === 'file').name] && (
+                                        <div className="mt-4 pt-4 border-t border-slate-700">
+                                            <img src={item[schema.find(f => f.type === 'file').name]} className="w-full h-32 object-cover rounded-lg border border-slate-600" alt="Anexo" />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // -- Construtor de Schema Dinâmico --
+        const SchemaBuilder = ({ category, onUpdateCategory }) => {
+            const [fields, setFields] = useState([]);
+            const [newField, setNewField] = useState({ label: '', type: 'text' });
+            const [error, setError] = useState(null);
+
+            const addField = () => {
+                if(!newField.label) return;
+                const name = newField.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                setFields([...fields, { ...newField, name }]);
+                setNewField({ label: '', type: 'text' });
+                setError(null);
+            };
+
+            const saveSchema = () => {
+                if(fields.length === 0) {
+                    setError("Adicione pelo menos um campo para continuar.");
+                    return;
+                }
+                onUpdateCategory({ ...category, schema: fields });
+            };
+
+            return (
+                <div className="glass-panel p-8 rounded-2xl max-w-2xl mx-auto shadow-3d mt-10">
+                    <h2 className="text-2xl font-bold text-white mb-2"><i className="fas fa-hammer text-brand-accent mr-2"></i> Construir Categoria: {category.name}</h2>
+                    <p className="text-slate-400 text-sm mb-6">Defina os campos que esta categoria terá. Você poderá adicionar textos, imagens, etc.</p>
+                    
+                    {error && <div className="mb-4 bg-red-500/20 border border-red-500 text-red-400 p-3 rounded-xl text-sm"><i className="fas fa-exclamation-circle mr-2"></i>{error}</div>}
+
+                    <div className="flex gap-2 mb-6 p-4 bg-slate-800/50 border border-slate-600 rounded-xl">
+                        <input type="text" placeholder="Nome do Campo (ex: Valor Gasto)" className="flex-1 glass-input p-2 rounded-lg text-sm" value={newField.label} onChange={e => setNewField({...newField, label: e.target.value})} />
+                        <select className="glass-input p-2 rounded-lg text-sm bg-brand-bg" value={newField.type} onChange={e => setNewField({...newField, type: e.target.value})}>
+                            <option value="text">Texto Curto</option>
+                            <option value="textarea">Caixa de Texto Longa</option>
+                            <option value="number">Número / Valor</option>
+                            <option value="date">Data</option>
+                            <option value="file">Imagem / Print / Arquivo</option>
+                        </select>
+                        <button onClick={addField} className="bg-brand-primary px-4 py-2 rounded-lg text-white font-bold hover:bg-blue-600 transition-colors"><i className="fas fa-plus"></i> Add</button>
+                    </div>
+
+                    <div className="space-y-2 mb-8">
+                        {fields.map((f, i) => (
+                            <div key={i} className="flex justify-between items-center p-3 glass-panel border border-slate-600 rounded-lg">
+                                <span className="text-white font-medium">{f.label}</span>
+                                <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300 uppercase">{f.type}</span>
+                            </div>
+                        ))}
+                        {fields.length === 0 && <p className="text-center text-slate-500 py-4">Nenhum campo adicionado ainda.</p>}
+                    </div>
+
+                    <button onClick={saveSchema} className="w-full bg-brand-accent hover:bg-cyan-600 text-white font-bold py-3 rounded-xl shadow-glass transition-all hover:scale-105">
+                        Salvar Estrutura e Começar a Usar
+                    </button>
+                </div>
+            );
+        };
+
+        // -- Módulo Kanban --
+        const KanbanBoard = ({ data, updateData }) => {
+            const columns = [
+                { id: 'prospeccao', title: 'Prospecção', color: 'border-blue-500' },
+                { id: 'contato', title: 'Contato Feito', color: 'border-purple-500' },
+                { id: 'proposta', title: 'Proposta Enviada', color: 'border-yellow-500' },
+                { id: 'fechado', title: 'Fechado/Ganho', color: 'border-green-500' },
+                { id: 'pos_venda', title: 'Pós-Venda', color: 'border-brand-accent' }
+            ];
+
+            const [cards, setCards] = useState(data.kanbanCards || []);
+            const [newCardContent, setNewCardContent] = useState('');
+            const [addingToCol, setAddingToCol] = useState(null);
+
+            useEffect(() => { updateData('kanbanCards', cards); }, [cards]);
+
+            const addCard = (colId) => {
+                if (!newCardContent) return;
+                setCards([...cards, { id: generateId(), content: newCardContent, colId }]);
+                setNewCardContent('');
+                setAddingToCol(null);
+            };
+
+            const delCard = (id) => setCards(cards.filter(c => c.id !== id));
+
+            const onDragStart = (e, cardId) => { e.dataTransfer.setData("cardId", cardId); };
+            const onDragOver = (e) => { e.preventDefault(); };
+            const onDrop = (e, colId) => {
+                const cardId = e.dataTransfer.getData("cardId");
+                setCards(cards.map(c => c.id === cardId ? { ...c, colId } : c));
+            };
+
+            return (
+                <div className="h-full flex flex-col pb-10">
+                    <div className="mb-6">
+                        <h2 className="text-2xl font-bold text-white"><i className="fas fa-layer-group text-brand-accent mr-2"></i> CRM Kanban de Vendas</h2>
+                        <p className="text-slate-400 text-sm">Arraste e solte os cards entre as colunas.</p>
+                    </div>
+                    
+                    <div className="flex gap-6 overflow-x-auto pb-4 flex-1 items-start snap-x">
+                        {columns.map(col => (
+                            <div key={col.id} onDragOver={onDragOver} onDrop={(e) => onDrop(e, col.id)} className={`glass-panel min-w-[300px] w-[300px] rounded-2xl border-t-4 ${col.color} p-4 flex flex-col kanban-col snap-center`}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-white">{col.title} <span className="text-xs bg-slate-700 px-2 py-0.5 rounded-full ml-2">{cards.filter(c => c.colId === col.id).length}</span></h3>
+                                    <button onClick={() => setAddingToCol(col.id)} className="text-slate-400 hover:text-white"><i className="fas fa-plus"></i></button>
+                                </div>
+
+                                <div className="flex-1 space-y-3 overflow-y-auto">
+                                    {addingToCol === col.id && (
+                                        <div className="bg-slate-800 p-3 rounded-xl border border-brand-primary">
+                                            <textarea autoFocus value={newCardContent} onChange={e => setNewCardContent(e.target.value)} className="w-full glass-input p-2 rounded-lg text-sm mb-2" rows="2" placeholder="Nome do lead, valor..."></textarea>
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => setAddingToCol(null)} className="text-xs text-slate-400 hover:text-white">Cancelar</button>
+                                                <button onClick={() => addCard(col.id)} className="bg-brand-primary text-white text-xs px-3 py-1 rounded-lg">Salvar</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {cards.filter(c => c.colId === col.id).map(card => (
+                                        <div key={card.id} draggable onDragStart={(e) => onDragStart(e, card.id)} className="bg-slate-800/80 p-4 rounded-xl border border-slate-600 shadow-md cursor-grab active:cursor-grabbing hover:border-brand-accent/50 group relative">
+                                            <p className="text-sm text-slate-200">{card.content}</p>
+                                            <button onClick={() => delCard(card.id)} className="absolute top-2 right-2 text-slate-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><i className="fas fa-trash text-xs"></i></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // -- Módulo Calculadora --
+        const CalculadoraMargem = () => {
+            const [custo, setCusto] = useState('');
+            const [venda, setVenda] = useState('');
+
+            const c = Number(custo) || 0;
+            const v = Number(venda) || 0;
+            const lucro = v - c;
+            const margem = v > 0 ? (lucro / v) * 100 : 0;
+
+            return (
+                <div className="max-w-xl mx-auto glass-panel p-8 rounded-3xl shadow-3d border border-brand-primary/30 mt-10">
+                    <div className="text-center mb-8">
+                        <i className="fas fa-calculator text-5xl text-brand-accent mb-4 neon-pulse rounded-full"></i>
+                        <h2 className="text-2xl font-bold text-white">Calculadora de Margem</h2>
+                        <p className="text-slate-400 text-sm">Simule o lucro líquido de Projetos (NFC / Sites)</p>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Custo do Produto/Serviço (R$)</label>
+                            <input type="number" step="0.01" value={custo} onChange={e=>setCusto(e.target.value)} className="w-full glass-input p-4 rounded-xl text-xl text-center" placeholder="Ex: 50.00" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Preço de Venda Final (R$)</label>
+                            <input type="number" step="0.01" value={venda} onChange={e=>setVenda(e.target.value)} className="w-full glass-input p-4 rounded-xl text-xl text-center" placeholder="Ex: 250.00" />
+                        </div>
+
+                        <div className="pt-6 border-t border-slate-700 grid grid-cols-2 gap-4">
+                            <div className="bg-slate-800/50 p-4 rounded-2xl text-center border border-slate-600">
+                                <span className="block text-slate-400 text-xs uppercase mb-1">Lucro Bruto (R$)</span>
+                                <span className={`text-2xl font-bold ${lucro >= 0 ? 'text-green-400' : 'text-red-400'}`}>{formatMoney(lucro)}</span>
+                            </div>
+                            <div className="bg-slate-800/50 p-4 rounded-2xl text-center border border-slate-600">
+                                <span className="block text-slate-400 text-xs uppercase mb-1">Margem de Lucro (%)</span>
+                                <span className={`text-2xl font-bold ${margem >= 50 ? 'text-brand-accent' : (margem >=0 ? 'text-green-400' : 'text-red-400')}`}>{margem.toFixed(2)}%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // -- Módulo Prospecção Mapa --
+        const MapProspecting = () => {
+            const [query, setQuery] = useState('');
+            const [mapUrl, setMapUrl] = useState('https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d14629.743849929845!2d-46.6333088!3d-23.5505199!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1spt-BR!2sbr!4v1'); // Default SP
+
+            useEffect(() => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition((pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        setMapUrl(`https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d1463!2d${longitude}!3d${latitude}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1spt-BR!2sbr!4v1`);
+                    }, () => {
+                        console.log("Geolocalização não permitida, usando padrão.");
+                    });
+                }
+            }, []);
+
+            const searchMap = (e) => {
+                e.preventDefault();
+                if(query) {
+                    const encodedQuery = encodeURIComponent(query);
+                    setMapUrl(`https://www.google.com/maps/embed/v1/search?q=${encodedQuery}&key=YOUR_API_KEY_AQUI`);
+                    // NOTA: Como a API Key do Google Maps Embed com busca requer faturamento, 
+                    // em um ambiente real você precisa inserir sua key no src acima. 
+                    // Por demonstração segura via iframe, vamos usar a URL de busca padrão do Maps embed sem API key complexa usando truque de URL:
+                    setMapUrl(`https://www.google.com/maps?q=${encodedQuery}&output=embed`);
+                }
+            };
+
+            return (
+                <div className="h-[85vh] flex flex-col pb-10">
+                    <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-white"><i className="fas fa-map-location-dot text-brand-accent mr-2"></i> Prospecção GPS</h2>
+                            <p className="text-slate-400 text-sm">Busque locais e comércios na sua região</p>
+                        </div>
+                        <form onSubmit={searchMap} className="flex w-full md:w-auto gap-2">
+                            <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: Restaurantes no Centro..." className="glass-input px-4 py-2 rounded-xl w-full md:w-80" />
+                            <button type="submit" className="bg-brand-primary px-4 py-2 rounded-xl text-white hover:bg-blue-600 transition-colors"><i className="fas fa-search"></i></button>
+                        </form>
+                    </div>
+                    
+                    <div className="flex-1 glass-panel rounded-2xl overflow-hidden border border-slate-700 relative shadow-3d">
+                        <div className="absolute top-4 left-4 z-10 bg-black/70 backdrop-blur p-4 rounded-xl border border-brand-accent text-sm max-w-xs shadow-glass">
+                            <h4 className="font-bold text-brand-accent mb-2"><i className="fas fa-info-circle"></i> Dica de Prospecção</h4>
+                            <p className="text-slate-300">Navegue pelo mapa, encontre comércios. Copie as informações e vá na aba "Prospecções Feitas" ou "Funil Kanban" para cadastrar o Lead.</p>
+                        </div>
+                        <iframe 
+                            title="Google Maps GPS"
+                            width="100%" 
+                            height="100%" 
+                            frameBorder="0" 
+                            style={{border:0}} 
+                            src={mapUrl} 
+                            allowFullScreen
+                            loading="lazy">
+                        </iframe>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [activeView, setActiveView] = useState('dashboard');
+            
+            // Modais globais
+            const [catModal, setCatModal] = useState(false);
+            const [catToDelete, setCatToDelete] = useState(null);
+            const [loginError, setLoginError] = useState('');
+            
+            // Inicialização dos dados no LocalStorage
+            const [appData, setAppData] = useLocalStorage('jl_app_data', {
+                categories: DEFAULT_CATEGORIES,
+                settings: { quote: "O sucesso é a soma de pequenos esforços repetidos dia após dia." }
+            });
+
+            const updateData = (key, value) => {
+                setAppData(prev => ({ ...prev, [key]: value }));
+            };
+
+            // Notificações (Pós-Venda 10 dias)
+            const getFollowUps = () => {
+                const clients = [...(appData.clientes_nfc || []), ...(appData.clientes_sites || [])];
+                const today = new Date().getTime();
+                return clients.filter(c => {
+                    if (!c.dataVenda) return false;
+                    const saleDate = new Date(c.dataVenda).getTime();
+                    const diffDays = (today - saleDate) / (1000 * 3600 * 24);
+                    return diffDays >= 10;
+                });
+            };
+            const followUps = getFollowUps();
+
+            const renderView = () => {
+                const currentCategory = appData.categories.find(c => c.id === activeView);
+                
+                if (!currentCategory) return <Dashboard data={appData} updateData={updateData} />;
+
+                switch (currentCategory.id) {
+                    case 'dashboard': return <Dashboard data={appData} updateData={updateData} />;
+                    case 'kanban': return <KanbanBoard data={appData} updateData={updateData} />;
+                    case 'calculadora': return <CalculadoraMargem />;
+                    case 'prospeccao': return <MapProspecting />;
+                    default:
+                        // Delega para o Gerenciador Genérico (CRUDs e Customizados)
+                        return <GenericManager category={currentCategory} data={appData} onUpdate={updateData} />;
+                }
+            };
+
+            // Login Screen
+            if (!isAuthenticated) {
+                const handleLogin = (e) => {
+                    e.preventDefault();
+                    const u = e.target.username.value;
+                    const p = e.target.password.value;
+                    if (u === 'JL2026' && p === 'JL3107') {
+                        setIsAuthenticated(true);
+                        setLoginError('');
+                    } else {
+                        setLoginError('Credenciais incorretas! Tente novamente.');
+                    }
+                };
+
+                return (
+                    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+                        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-brand-primary rounded-full filter blur-[150px] opacity-30"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-brand-accent rounded-full filter blur-[150px] opacity-20"></div>
+                        
+                        <div className="glass-panel p-10 rounded-3xl shadow-2xl w-full max-w-md relative z-10 border border-slate-700 text-center transform transition-all hover:shadow-cyan-900/40">
+                            <div className="w-20 h-20 bg-gradient-to-br from-brand-primary to-brand-accent rounded-full mx-auto mb-6 flex items-center justify-center shadow-glass neon-pulse">
+                                <span className="text-3xl font-black text-white tracking-tighter">JL</span>
+                            </div>
+                            <h1 className="text-2xl font-bold text-white mb-2">JL Solutions</h1>
+                            <p className="text-slate-400 mb-8 text-sm">Painel Administrativo Corporativo</p>
+                            
+                            <form onSubmit={handleLogin} className="space-y-6 text-left">
+                                {loginError && (
+                                    <div className="bg-red-500/20 border border-red-500 text-red-400 p-3 rounded-xl text-center text-sm animate-pulse">
+                                        <i className="fas fa-times-circle mr-2"></i>{loginError}
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-widest mb-2">Usuário</label>
+                                    <div className="relative">
+                                        <i className="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                                        <input name="username" type="text" required className="w-full glass-input pl-10 pr-4 py-3 rounded-xl" placeholder="Insira seu login" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-widest mb-2">Senha de Acesso</label>
+                                    <div className="relative">
+                                        <i className="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                                        <input name="password" type="password" required className="w-full glass-input pl-10 pr-4 py-3 rounded-xl" placeholder="••••••••" />
+                                    </div>
+                                </div>
+                                <button type="submit" className="w-full bg-gradient-to-r from-brand-primary to-blue-500 hover:from-blue-600 hover:to-brand-primary text-white font-bold py-4 rounded-xl shadow-glass transition-all transform hover:scale-105">
+                                    ENTRAR NO SISTEMA
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Gerenciamento de Categorias Personalizadas
+            const addCategory = (name, icon) => {
+                if (name && icon) {
+                    const id = 'custom_' + generateId();
+                    const newCats = [...appData.categories, { id, name, icon, type: 'custom', schema: [] }];
+                    updateData('categories', newCats);
+                    setActiveView(id);
+                    setCatModal(false);
+                }
+            };
+
+            const removeCategory = (id) => {
+                setCatToDelete(id);
+            };
+
+            const confirmRemoveCategory = () => {
+                if(catToDelete) {
+                    updateData('categories', appData.categories.filter(c => c.id !== catToDelete));
+                    if(activeView === catToDelete) setActiveView('dashboard');
+                    setCatToDelete(null);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Modais Globais */}
+                    {catModal && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                            <div className="glass-panel p-6 rounded-2xl max-w-sm w-full shadow-2xl border border-slate-600">
+                                <h3 className="text-xl font-bold text-white mb-4"><i className="fas fa-folder-plus text-brand-accent mr-2"></i> Nova Categoria</h3>
+                                <form onSubmit={(e) => { e.preventDefault(); addCategory(e.target.name.value, e.target.icon.value); }}>
+                                    <label className="block text-xs text-slate-400 uppercase mb-1">Nome do Módulo</label>
+                                    <input name="name" type="text" placeholder="Ex: Equipamentos" required className="w-full glass-input p-3 rounded-xl mb-4" />
+                                    
+                                    <label className="block text-xs text-slate-400 uppercase mb-1">Ícone FontAwesome</label>
+                                    <input name="icon" type="text" placeholder="Ex: fa-box, fa-car" required defaultValue="fa-star" className="w-full glass-input p-3 rounded-xl mb-6" />
+                                    
+                                    <div className="flex gap-4 justify-end">
+                                        <button type="button" onClick={() => setCatModal(false)} className="px-4 py-2 rounded-lg bg-slate-700 text-white w-full">Cancelar</button>
+                                        <button type="submit" className="px-4 py-2 rounded-lg bg-brand-primary text-white w-full">Criar Módulo</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {catToDelete && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                            <div className="glass-panel p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border border-slate-600">
+                                <i className="fas fa-trash-alt text-4xl text-red-500 mb-4"></i>
+                                <h3 className="text-xl font-bold text-white mb-2">Remover Módulo?</h3>
+                                <p className="text-slate-300 text-sm mb-6">Esta categoria e todos os registros salvos nela serão excluídos permanentemente.</p>
+                                <div className="flex gap-4 justify-center">
+                                    <button onClick={() => setCatToDelete(null)} className="px-4 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-600 transition-colors w-full">Cancelar</button>
+                                    <button onClick={confirmRemoveCategory} className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors w-full">Excluir</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Header Topo */}
+                    <header className="h-20 glass-panel border-b border-slate-800 flex items-center justify-between px-6 sticky top-0 z-40">
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => setIsSidebarOpen(true)} className="text-white hover:text-brand-accent text-2xl transition-colors">
+                                <i className="fas fa-bars"></i>
+                            </button>
+                            <h1 className="text-xl font-bold text-white hidden sm:block tracking-wide">
+                                <span className="text-brand-accent">JL</span> Solutions
+                            </h1>
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            {/* Notificações */}
+                            <div className="relative group cursor-pointer">
+                                <i className="fas fa-bell text-xl text-slate-300 group-hover:text-white transition-colors"></i>
+                                {followUps.length > 0 && (
+                                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full animate-bounce">
+                                        {followUps.length}
+                                    </span>
+                                )}
+                                
+                                {/* Dropdown de Notificações */}
+                                <div className="absolute right-0 mt-2 w-80 glass-panel border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all p-4 z-50">
+                                    <h4 className="font-bold text-white border-b border-slate-700 pb-2 mb-2">Follow-up Pendentes (10 dias)</h4>
+                                    {followUps.length === 0 ? <p className="text-sm text-slate-400">Nenhum pendente.</p> : (
+                                        <div className="max-h-60 overflow-y-auto space-y-3">
+                                            {followUps.map((c, i) => (
+                                                <div key={i} className="bg-slate-800 p-3 rounded-lg flex flex-col gap-2">
+                                                    <span className="text-sm text-white font-medium">{c.nome || c.responsavel}</span>
+                                                    <a href={`https://wa.me/55${(c.telComercial || c.telPessoal || '').replace(/\D/g,'')}?text=Olá ${c.responsavel || ''}, tudo bem? Aqui é da JL Solutions. Como está a experiência com nosso produto desde a instalação?`} target="_blank" className="bg-green-600 hover:bg-green-500 text-white text-xs py-1.5 px-3 rounded flex items-center justify-center gap-2">
+                                                        <i className="fab fa-whatsapp text-sm"></i> Antecipar Mensagem
+                                                    </a>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-primary to-brand-accent shadow-glass flex items-center justify-center text-white font-bold border-2 border-slate-700">
+                                JL
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Sidebar Interativa */}
+                    <div className={`fixed inset-y-0 left-0 z-50 w-72 glass-panel border-r border-slate-700 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out flex flex-col shadow-2xl`}>
+                        <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
+                            <span className="font-bold text-white text-lg tracking-widest"><i className="fas fa-layer-group text-brand-accent mr-2"></i> MÓDULOS</span>
+                            <button onClick={() => setIsSidebarOpen(false)} className="text-slate-400 hover:text-white text-xl">
+                                <i className="fas fa-chevron-left"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+                            {appData.categories.map(cat => (
+                                <div key={cat.id} className="relative group">
+                                    <button 
+                                        onClick={() => { setActiveView(cat.id); setIsSidebarOpen(window.innerWidth > 768); }}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-left ${activeView === cat.id ? 'bg-brand-primary/20 text-brand-accent border border-brand-primary/50 shadow-glass' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
+                                        <i className={`fas ${cat.icon} w-5 text-center`}></i>
+                                        <span className="text-sm font-medium flex-1 truncate">{cat.name}</span>
+                                    </button>
+                                    {cat.type === 'custom' && (
+                                        <button onClick={() => removeCategory(cat.id)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-2"><i className="fas fa-times text-xs"></i></button>
+                                    )}
+                                </div>
+                            ))}
+
+                            <div className="pt-6 pb-2 px-4 border-t border-slate-800 mt-4">
+                                <button onClick={() => setCatModal(true)} className="w-full border border-dashed border-slate-600 text-slate-400 hover:text-brand-accent hover:border-brand-accent py-2 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+                                    <i className="fas fa-plus"></i> Nova Categoria
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Overlay Sidebar mobile */}
+                    {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"></div>}
+
+                    {/* Área Principal de Conteúdo */}
+                    <main className="flex-1 p-4 md:p-8 relative w-full mx-auto max-w-7xl">
+                        {renderView()}
+                    </main>
+
+                    {/* Controles Flutuantes (Scroll Up/Down) */}
+                    <FloatingControls />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
